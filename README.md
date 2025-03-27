@@ -1,101 +1,79 @@
 # Generador de Imágenes con IA
 
-Una aplicación para crear y editar imágenes fácilmente utilizando inteligencia artificial.
+Aplicación web que permite generar y editar imágenes con inteligencia artificial utilizando el modelo Gemini de Google.
 
 ## Características
 
-- Generación de imágenes basada en prompts en español
-- Soporte para múltiples imágenes de entrada
-- Capacidad para usar máscaras para ediciones selectivas
-- Traducción automática de prompts al inglés para mejorar resultados
-- Alta calidad de generación con preservación de detalles
+- Generación de múltiples variaciones de imágenes con diferentes niveles de creatividad
+- Edición de imágenes mediante máscaras y selección de áreas
+- Transferencia de elementos entre imágenes (como logos o partes de una imagen a otra)
+- Interfaz amigable y fácil de usar
+- Instrucciones en español con traducción automática para el modelo
 
-## Tecnologías utilizadas
-
-- Next.js 15
-- React 19
-- Tailwind CSS
-- Google Gemini API
-- TypeScript
-
-## Requisitos previos
+## Requisitos
 
 - Node.js 18.17.0 o superior
-- NPM o Yarn
-- Una API key de Google Gemini
+- Cuenta en Google AI Studio para obtener una API Key de Gemini
 
-## Configuración local
+## Configuración
 
-1. Clona este repositorio
-   ```bash
-   git clone https://tu-repositorio.git
-   cd generador-de-imagenes
-   ```
+1. Clona este repositorio:
+```bash
+git clone <url-del-repositorio>
+cd <nombre-del-directorio>
+```
 
-2. Instala las dependencias
-   ```bash
-   npm install
-   # o
-   yarn install
-   ```
+2. Instala las dependencias:
+```bash
+npm install
+```
 
-3. Crea un archivo `.env.local` en la raíz del proyecto con tu API key de Google Gemini
-   ```
-   NEXT_PUBLIC_GEMINI_API_KEY=tu_api_key_aqui
-   ```
+3. Crea un archivo `.env.local` en la raíz del proyecto con el siguiente contenido:
+```
+NEXT_PUBLIC_GEMINI_API_KEY=tu-api-key-de-gemini
+```
 
-4. Inicia el servidor de desarrollo
-   ```bash
-   npm run dev
-   # o
-   yarn dev
-   ```
-
-5. Abre [http://localhost:3000](http://localhost:3000) en tu navegador
+4. Ejecuta el servidor de desarrollo:
+```bash
+npm run dev
+```
 
 ## Despliegue en Vercel
 
-Esta aplicación está optimizada para ser desplegada en la plataforma Vercel. 
+1. Crea una cuenta en [Vercel](https://vercel.com) si aún no tienes una.
 
-### Pasos para desplegar:
+2. Importa tu repositorio de GitHub, GitLab o Bitbucket en Vercel.
 
-1. Crea una cuenta en [Vercel](https://vercel.com) si aún no tienes una
+3. En la configuración del proyecto, añade la variable de entorno:
+   - `NEXT_PUBLIC_GEMINI_API_KEY`: Tu API key de Gemini
 
-2. Instala la CLI de Vercel (opcional)
-   ```bash
-   npm install -g vercel
-   ```
+4. Haz clic en "Deploy" y espera a que el proceso de despliegue termine.
 
-3. Configura las variables de entorno en Vercel:
-   - `NEXT_PUBLIC_GEMINI_API_KEY`: Tu API key de Google Gemini
-
-4. Despliega usando Git:
-   - Conecta tu repositorio GitHub/GitLab/Bitbucket en el dashboard de Vercel
-   - Configura tu proyecto y las variables de entorno
-   - Haz clic en "Deploy"
-
-   O usando la CLI de Vercel:
-   ```bash
-   vercel
-   ```
-
-5. Para producción:
-   ```bash
-   vercel --prod
-   ```
+5. Una vez completado, podrás acceder a tu aplicación a través de la URL proporcionada por Vercel.
 
 ## Uso
 
-1. Sube una o más imágenes (hasta 3)
-2. Opcionalmente, marca áreas específicas usando el pincel rojo
-3. Escribe un prompt en español describiendo la transformación deseada
-4. Haz clic en "Generar" y espera el resultado
-5. Puedes regenerar o editar la imagen resultante
+1. Sube una imagen o varias imágenes a la aplicación.
+2. Opcionalmente, utiliza la herramienta de máscara para seleccionar áreas específicas.
+3. Escribe un prompt describiendo qué cambios deseas realizar en la imagen.
+4. Haz clic en "Generar" y espera a que el modelo procese tu solicitud.
+5. Explora las diferentes variaciones generadas y elige la que más te guste.
+6. Descarga la imagen resultante o realiza más ediciones según sea necesario.
 
-## Desarrollado por
+## Tecnologías utilizadas
 
-Luis GHS
+- Next.js
+- React
+- TypeScript
+- Tailwind CSS
+- Gemini API de Google
+
+## Limitaciones
+
+- El modelo Gemini tiene restricciones en cuanto al tipo de contenido que puede generar.
+- Algunas operaciones complejas pueden requerir múltiples intentos para obtener resultados óptimos.
+- La calidad de los resultados depende de la claridad del prompt y la calidad de las imágenes originales.
 
 ## Licencia
 
-Este proyecto está licenciado bajo la Licencia MIT - ver el archivo LICENSE para más detalles.
+Este proyecto está licenciado bajo la licencia MIT. Ver el archivo LICENSE para más detalles.
