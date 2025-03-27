@@ -1,14 +1,90 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import toast, { Toaster } from 'react-hot-toast';
 import ImageUploader from './components/ImageUploader';
 import PromptInput, { PromptInputRef } from './components/PromptInput';
-import GeneratedImage from './components/GeneratedImage';
-import { generateImageFromPrompt, generateHighQualityImage, clearModelCache } from './lib/gemini';
+import GeneratedImage, { GeneratedImageVariant } from './components/GeneratedImage';
+import Switch from './components/Switch';
+import SeedControl from './components/SeedControl';
+import MaskInfo from './components/MaskInfo';
+import TabSwitcher from './components/TabSwitcher';
+import TextToImageGenerator from './components/TextToImageGenerator';
+import { 
+  generateImageFromPrompt, 
+  generateHighQualityImage, 
+  generateImageVariations,
+  clearModelCache, 
+  resetGenerationSeed, 
+  isSeedLocked, 
+  globalGenerationSeed 
+} from './lib/gemini';
 
-// Función para traducir el prompt a inglés de manera simple
+// Función para traducir el prompt a inglés de manera simple pero preservando instrucciones críticas
 const translateToEnglish = (prompt: string): string => {
+  // Detectar instrucciones de transferencia entre imágenes
+  const promptLower = prompt.toLowerCase();
+  const containsTransferInstructions = 
+      promptLower.includes('coloca') || 
+      promptLower.includes('poner') || 
+      promptLower.includes('pon') || 
+      promptLower.includes('añade') || 
+      promptLower.includes('añadir') || 
+      promptLower.includes('agrega') || 
+      (promptLower.includes('logo') && 
+       (promptLower.includes('imagen 1') || promptLower.includes('imagen 2')));
+  
+  // Si contiene instrucciones de transferencia, hacer una traducción más cuidadosa
+  if (containsTransferInstructions) {
+    // Traducir explícitamente términos de transferencia
+    let modifiedPrompt = prompt;
+    
+    // Términos de ubicación específica
+    modifiedPrompt = modifiedPrompt
+      .replace(/\bimagen 1\b/gi, "IMAGE 1")
+      .replace(/\bimagen 2\b/gi, "IMAGE 2")
+      .replace(/\bimagen 3\b/gi, "IMAGE 3")
+      .replace(/\bprimera imagen\b/gi, "IMAGE 1")
+      .replace(/\bsegunda imagen\b/gi, "IMAGE 2")
+      .replace(/\btercera imagen\b/gi, "IMAGE 3")
+      .replace(/\blogo\b/gi, "LOGO")
+      .replace(/\bpolo\b/gi, "SHIRT")
+      .replace(/\bcamisa\b/gi, "SHIRT")
+      .replace(/\bplayera\b/gi, "TSHIRT")
+      .replace(/\bcamiseta\b/gi, "TSHIRT")
+      .replace(/\bde el\b/gi, "of the")
+      .replace(/\bdel\b/gi, "of the")
+      .replace(/\ben el\b/gi, "on the")
+      .replace(/\ben la\b/gi, "on the")
+      .replace(/\bsobre\b/gi, "on");
+    
+    // Verbos de acción específicos
+    if (promptLower.includes("coloca")) {
+      modifiedPrompt = modifiedPrompt.replace(/\bcoloca\b/gi, "PLACE");
+    }
+    if (promptLower.includes("pon")) {
+      modifiedPrompt = modifiedPrompt.replace(/\bpon\b/gi, "PUT");
+    }
+    if (promptLower.includes("poner")) {
+      modifiedPrompt = modifiedPrompt.replace(/\bponer\b/gi, "PUT");
+    }
+    if (promptLower.includes("añade")) {
+      modifiedPrompt = modifiedPrompt.replace(/\bañade\b/gi, "ADD");
+    }
+    if (promptLower.includes("añadir")) {
+      modifiedPrompt = modifiedPrompt.replace(/\bañadir\b/gi, "ADD");
+    }
+    if (promptLower.includes("agrega")) {
+      modifiedPrompt = modifiedPrompt.replace(/\bagrega\b/gi, "ADD");
+    }
+    
+    // Instrucción final específica para operaciones de transferencia
+    const transferPrefix = "TRANSFER INSTRUCTION: ";
+    const transferSuffix = " (CRITICAL: Identify the LOGO or element in the second image and transfer it EXACTLY to the specified location in the first image. Maintain all original proportions, colors, and details. THIS IS A PRECISE TRANSFER OPERATION.)";
+    
+    return transferPrefix + modifiedPrompt + transferSuffix;
+  }
+  
   // Traducciones comunes en generación de imágenes
   const translations: Record<string, string> = {
     // Animales
@@ -162,17 +238,10 @@ const translateToEnglish = (prompt: string): string => {
     'orejas': 'ears',
     'cara': 'face',
     'rostro': 'face',
-    'sombrero': 'hat',
     'gorro': 'cap',
-    'gafas': 'glasses',
-    'lentes': 'glasses',
     'ropa': 'clothes',
-    'camisa': 'shirt',
     'pantalón': 'pants',
-    'zapato': 'shoe',
-    'zapatos': 'shoes',
     'vestido': 'dress',
-    'falda': 'skirt',
     'traje': 'suit',
     'auto': 'car',
     'coche': 'car',
@@ -263,6 +332,51 @@ const translateToEnglish = (prompt: string): string => {
     'hdr': 'hdr',
     'baja calidad': 'low quality',
     'alta calidad': 'high quality',
+    
+    // Términos específicos para elementos de imágenes
+    'logo': 'logo',
+    'logotipo': 'logo',
+    'emblema': 'emblem',
+    'insignia': 'badge',
+    'símbolo': 'symbol',
+    'marca': 'brand',
+    'polo': 'polo shirt',
+    'camiseta': 't-shirt',
+    'playera': 't-shirt',
+    'camisa': 'shirt',
+    'sudadera': 'sweatshirt',
+    'chamarra': 'jacket',
+    'chaqueta': 'jacket',
+    'pantalones': 'pants',
+    'jeans': 'jeans',
+    'vaqueros': 'jeans',
+    'cinturón': 'belt',
+    'calcetines': 'socks',
+    'medias': 'socks',
+    'zapatos': 'shoes',
+    'botas': 'boots',
+    'tenis': 'sneakers',
+    'zapatillas': 'sneakers',
+    'chanclas': 'flip flops',
+    'sandalias': 'sandals',
+    'pulsera': 'bracelet',
+    'reloj': 'watch',
+    'collar': 'necklace',
+    'anillo': 'ring',
+    'pendientes': 'earrings',
+    'aretes': 'earrings',
+    'mochila': 'backpack',
+    'bolso': 'bag',
+    'bolsa': 'bag',
+    'cartera': 'wallet',
+    'billetera': 'wallet',
+    'paraguas': 'umbrella',
+    'sombrero': 'hat',
+    'gorra': 'cap',
+    'guantes': 'gloves',
+    'bufanda': 'scarf',
+    'gafas': 'glasses',
+    'lentes': 'glasses'
   };
   
   // Convertir a minúsculas para la comparación
@@ -277,29 +391,66 @@ const translateToEnglish = (prompt: string): string => {
   
   // Mantener mayúsculas/minúsculas originales mientras sea posible
   // pero asegurarnos de que la traducción se aplicó
-  return `${lowerPrompt} (Original Spanish prompt: ${prompt})`;
+  return `${lowerPrompt} (Prompt original en español: ${prompt})`;
 };
 
 export default function Home() {
-  const [uploadedImages, setUploadedImages] = useState<string[] | null>(null);
-  const [imageMasks, setImageMasks] = useState<Record<number, string>>({});
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  // Estado para controlar qué pestaña está activa
+  const [activeTab, setActiveTab] = useState('edit'); // 'edit' o 'generate'
+  
+  // Estados existentes
+  const [images, setImages] = useState<string[]>([]);
+  const [masks, setMasks] = useState<Record<number, string> | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [generatedImageVariants, setGeneratedImageVariants] = useState<GeneratedImageVariant[]>([]);
+  const [previousMasks, setPreviousMasks] = useState<Record<number, string> | undefined>(undefined);
+  const [keepMasks, setKeepMasks] = useState<boolean>(false);
   const promptInputRef = useRef<PromptInputRef>(null);
 
   const handleImagesUpload = (images: string[], masks?: Record<number, string>) => {
-    setUploadedImages(images);
-    if (masks) {
-      setImageMasks(masks);
+    setImages(images);
+    
+    // Si keepMasks está activado y tenemos máscaras previas, mantenerlas
+    // Solo usamos las nuevas máscaras si existen
+    if (keepMasks && previousMasks && (!masks || Object.keys(masks).length === 0)) {
+      setMasks(previousMasks);
+    } else {
+      setMasks(masks);
+      // Guardamos las máscaras actuales como previas para posible uso futuro
+      if (masks && Object.keys(masks).length > 0) {
+        setPreviousMasks(masks);
+      }
     }
-    setGeneratedImage(null);
+  };
+
+  const handleKeepMasksToggle = (value: boolean) => {
+    setKeepMasks(value);
+    
+    if (value) {
+      // Si activamos la opción:
+      // 1. Si hay máscaras actuales, guardarlas como previas para futuras generaciones
+      if (masks && Object.keys(masks).length > 0) {
+        setPreviousMasks(masks);
+      }
+      // 2. Si no hay máscaras actuales pero hay previas, restaurarlas
+      else if (previousMasks && Object.keys(previousMasks).length > 0) {
+        setMasks(previousMasks);
+      }
+    } else {
+      // Si desactivamos la opción, guardar las máscaras actuales como previas
+      // pero no las eliminamos, solo se eliminarán en la próxima generación
+      if (masks && Object.keys(masks).length > 0) {
+        setPreviousMasks(masks);
+      }
+    }
   };
 
   const handleReset = () => {
     // Limpiar estados
-    setUploadedImages(null);
-    setImageMasks({});
-    setGeneratedImage(null);
+    setImages([]);
+    setMasks(undefined);
+    setGeneratedImageVariants([]);
     
     // Limpiar el prompt
     if (promptInputRef.current) {
@@ -320,24 +471,32 @@ export default function Home() {
   };
 
   const handlePromptSubmit = async (prompt: string) => {
-    if (!uploadedImages || uploadedImages.length === 0) {
+    if (!images || images.length === 0) {
       toast.error('Por favor, sube al menos una imagen');
       return;
     }
 
     setIsLoading(true);
     try {
+      // Si la semilla no está bloqueada, generar una nueva para esta generación
+      if (!isSeedLocked()) {
+        const newSeed = resetGenerationSeed();
+        toast.loading(`Generando imágenes con nueva semilla: ${newSeed}...`, { id: 'generating-image' });
+      } else {
+        // Si está bloqueada, notificar que se está usando la misma semilla
+        const currentSeed = globalGenerationSeed || 0; // Importar globalGenerationSeed
+        toast.loading(`Generando imágenes manteniendo la semilla ${currentSeed}...`, { id: 'generating-image' });
+      }
+      
       // Verificar que las imágenes estén en el orden correcto
-      let processedImages = [...uploadedImages];
+      let processedImages = [...images];
       
       // Comprobar si hay máscaras definidas
-      const hasMasks = Object.keys(imageMasks).length > 0;
+      const hasMasks = masks && Object.keys(masks).length > 0;
       
-      // Si hay máscaras, mostrar un mensaje indicando que se están usando
+      // Si hay máscaras, mostrar un mensaje adicional indicando que se están usando
       if (hasMasks) {
-        toast.loading('Generando imagen con máscaras seleccionadas...', { id: 'generating-image' });
-      } else {
-        toast.loading('Generando imagen en alta calidad...', { id: 'generating-image' });
+        toast.loading('Aplicando máscaras a las áreas seleccionadas...', { id: 'applying-masks' });
       }
       
       // Traducir el prompt a inglés para mejorar los resultados
@@ -345,47 +504,53 @@ export default function Home() {
       console.log('Prompt original:', prompt);
       console.log('Prompt traducido:', translatedPrompt);
       
-      // Intentar generar la imagen
-      let result;
-      try {
-        result = await generateHighQualityImage(processedImages, translatedPrompt, hasMasks ? imageMasks : undefined);
-      } catch (highQualityError) {
-        console.warn('Error con el método de alta calidad:', highQualityError);
-        
-        // Mensaje más específico si hay máscaras
-        if (hasMasks) {
-          toast.loading('Error con las máscaras, intentando método alternativo...', { id: 'generating-image' });
-        } else {
-          toast.loading('Utilizando método alternativo...', { id: 'generating-image' });
-        }
-        
-        // Si falla, usamos el método original como respaldo
-        result = await generateImageFromPrompt(processedImages, translatedPrompt, hasMasks ? imageMasks : undefined);
-      }
+      // Generar variaciones de la imagen
+      toast.loading('Generando múltiples variaciones...', { id: 'generating-variations' });
       
-      // Cerrar el toast de carga
+      // Intentar generar 3 variaciones de imagen
+      const results = await generateImageVariations(
+        processedImages, 
+        translatedPrompt, 
+        hasMasks ? masks : undefined,
+        3 // número de variaciones
+      );
+      
+      // Cerrar todos los toasts de carga
       toast.dismiss('generating-image');
+      toast.dismiss('applying-masks');
+      toast.dismiss('generating-variations');
       
-      if (result) {
-        // Verificar si la respuesta es una imagen en base64 o convertirla a URL de datos
-        let imageUrl = result;
-        if (!result.startsWith('data:image')) {
-          // Si no es una URL de datos, intentamos tratarla como base64
-          imageUrl = `data:image/jpeg;base64,${result}`;
+      if (results && results.length > 0) {
+        // Crear objetos de variante para cada imagen resultante
+        const variants: GeneratedImageVariant[] = results.map((imageUrl, index) => {
+          let label = '';
+          if (index === 0) label = 'Original';
+          else if (index === 1) label = 'Balance';
+          else if (index === 2) label = 'Creativa';
+          
+          return {
+            imageUrl,
+            variationLabel: label
+          };
+        });
+        
+        setGeneratedImageVariants(variants);
+        toast.success(`¡${results.length} variaciones generadas exitosamente!`);
+        
+        // Guardar máscaras actuales como previas antes de procesarlas
+        if (hasMasks && keepMasks) {
+          setPreviousMasks(masks);
         }
         
-        setGeneratedImage(imageUrl);
-        toast.success('¡Imagen generada exitosamente!');
-        
-        // Limpiar las máscaras ya que se han usado
-        if (hasMasks) {
-          setImageMasks({});
+        // Solo limpiar las máscaras si keepMasks está desactivado
+        if (hasMasks && !keepMasks) {
+          setMasks(undefined);
         }
       } else {
-        toast.error('No se pudo generar la imagen, intenta con otro prompt');
+        toast.error('No se pudieron generar variaciones, intenta con otro prompt');
       }
     } catch (error) {
-      console.error('Error al generar la imagen:', error);
+      console.error('Error al generar las variaciones:', error);
       
       // Mensajes de error específicos según el error
       if (error instanceof Error) {
@@ -402,8 +567,10 @@ export default function Home() {
         toast.error('Ocurrió un error desconocido. Intenta de nuevo más tarde.');
       }
       
-      // Cerrar el toast de carga si aún está activo
+      // Cerrar todos los toasts de carga
       toast.dismiss('generating-image');
+      toast.dismiss('applying-masks');
+      toast.dismiss('generating-variations');
     } finally {
       setIsLoading(false);
       
@@ -427,27 +594,37 @@ export default function Home() {
     }
   };
 
-  const handleEditGeneratedImage = () => {
-    if (!generatedImage) return;
+  const handleEditGeneratedImage = (variantIndex: number = 0) => {
+    if (!generatedImageVariants || generatedImageVariants.length === 0) return;
+    
+    // Obtener la variante seleccionada
+    const selectedVariant = generatedImageVariants[variantIndex];
     
     // Extraer el base64 de la URL de datos
-    let base64Data = generatedImage;
-    if (generatedImage.startsWith('data:')) {
-      base64Data = generatedImage.split(',')[1];
+    let base64Data = selectedVariant.imageUrl;
+    if (base64Data.startsWith('data:')) {
+      base64Data = base64Data.split(',')[1];
     }
     
-    // Usar la imagen generada como la nueva imagen principal
-    setUploadedImages([base64Data]);
+    // Usar la imagen seleccionada como la nueva imagen principal
+    setImages([base64Data]);
     
-    // Limpiar máscaras
-    setImageMasks({});
+    // Guardar las máscaras actuales como previas si keepMasks está activado
+    if (keepMasks && masks && Object.keys(masks).length > 0) {
+      setPreviousMasks(masks);
+    }
+    
+    // Solo limpiar máscaras si keepMasks está desactivado
+    if (!keepMasks) {
+      setMasks(undefined);
+    }
     
     // Notificar al usuario
-    toast.success('Imagen lista para editar. Escribe un nuevo prompt para continuar.');
+    toast.success(`Variante "${selectedVariant.variationLabel || `#${variantIndex+1}`}" lista para editar. Escribe un nuevo prompt para continuar.`);
   };
 
   const handleRegenerateImage = async () => {
-    if (!promptInputRef.current || !uploadedImages || uploadedImages.length === 0) return;
+    if (!promptInputRef.current || !images || images.length === 0) return;
     
     const currentPrompt = promptInputRef.current.getCurrentPrompt();
     
@@ -456,45 +633,100 @@ export default function Home() {
       return;
     }
     
-    // Mostrar mensaje de regeneración
-    toast.loading('Regenerando imagen con el mismo prompt...', { id: 'regenerating' });
+    // Si la semilla no está bloqueada, generar una nueva para esta regeneración
+    if (!isSeedLocked()) {
+      const newSeed = resetGenerationSeed();
+      toast.loading(`Regenerando variaciones con nueva semilla: ${newSeed}...`, { id: 'regenerating' });
+    } else {
+      // Si está bloqueada, notificar que se está usando la misma semilla
+      const currentSeed = globalGenerationSeed || 0;
+      toast.loading(`Regenerando variaciones manteniendo la semilla ${currentSeed}...`, { id: 'regenerating' });
+    }
     
     setIsLoading(true);
     try {
       // Verificar que las imágenes estén en el orden correcto
-      let processedImages = [...uploadedImages];
+      let processedImages = [...images];
       
       // Comprobar si hay máscaras definidas
-      const hasMasks = Object.keys(imageMasks).length > 0;
+      const hasMasks = masks && Object.keys(masks).length > 0;
       
-      // Primero intentamos con el método de alta calidad
-      let result;
-      try {
-        result = await generateHighQualityImage(processedImages, currentPrompt, hasMasks ? imageMasks : undefined);
-      } catch (highQualityError) {
-        console.warn('Error con el método de alta calidad, utilizando método estándar:', highQualityError);
-        // Si falla, usamos el método original como respaldo
-        result = await generateImageFromPrompt(processedImages, currentPrompt, hasMasks ? imageMasks : undefined);
+      // Traducir el prompt a inglés para mejorar los resultados
+      const translatedPrompt = translateToEnglish(currentPrompt);
+      
+      // Generar variaciones de la imagen
+      toast.loading('Regenerando múltiples variaciones...', { id: 'generating-variations' });
+      
+      // Intentar generar 3 variaciones de imagen
+      const results = await generateImageVariations(
+        processedImages, 
+        translatedPrompt, 
+        hasMasks ? masks : undefined,
+        3 // número de variaciones
+      );
+      
+      // Cerrar todos los toasts de carga
+      toast.dismiss('regenerating');
+      toast.dismiss('generating-variations');
+      
+      if (results && results.length > 0) {
+        // Crear objetos de variante para cada imagen resultante
+        const variants: GeneratedImageVariant[] = results.map((imageUrl, index) => {
+          let label = '';
+          if (index === 0) label = 'Original';
+          else if (index === 1) label = 'Balance';
+          else if (index === 2) label = 'Creativa';
+          
+          return {
+            imageUrl,
+            variationLabel: label
+          };
+        });
+        
+        setGeneratedImageVariants(variants);
+        toast.success(`¡${results.length} variaciones regeneradas exitosamente!`);
+        
+        // Guardar máscaras actuales como previas si keepMasks está activado
+        if (hasMasks && keepMasks) {
+          setPreviousMasks(masks);
+        }
+        
+        // Solo limpiar máscaras si keepMasks está desactivado
+        if (hasMasks && !keepMasks) {
+          setMasks(undefined);
+        }
+      } else {
+        toast.error('No se pudieron regenerar las variaciones, intenta con otro prompt');
       }
-      
-      // Verificar si la respuesta es una imagen en base64 o convertirla a URL de datos
-      let imageUrl = result;
-      if (!result.startsWith('data:image')) {
-        // Si no es una URL de datos, intentamos tratarla como base64
-        imageUrl = `data:image/jpeg;base64,${result}`;
-      }
-      
-      setGeneratedImage(imageUrl);
-      toast.success('¡Imagen regenerada exitosamente!');
     } catch (error) {
-      console.error('Error al regenerar la imagen:', error);
-      toast.error('Error al regenerar la imagen. Por favor, intenta nuevamente.');
+      console.error('Error al regenerar las variaciones:', error);
+      toast.error('Error al regenerar las variaciones. Por favor, intenta nuevamente.');
     } finally {
       setIsLoading(false);
-      // Cerrar el toast de regeneración
-      toast.dismiss('regenerating');
     }
   };
+
+  // Definición de las pestañas
+  const tabs = [
+    {
+      id: 'edit',
+      label: 'Editar Imágenes',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+        </svg>
+      )
+    },
+    {
+      id: 'generate',
+      label: 'Generar Imágenes',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+      )
+    }
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-indigo-50/30 to-purple-50/30">
@@ -513,8 +745,8 @@ export default function Home() {
             <span className="title-gradient">Generador de Imágenes con IA</span>
           </h1>
           <p className="text-base sm:text-xl text-gray-700 max-w-3xl mx-auto font-medium">
-            Transforma tus imágenes utilizando inteligencia artificial. 
-            Sube hasta 3 imágenes y describe los cambios que deseas aplicar.
+            Transforma o genera imágenes utilizando inteligencia artificial. 
+            Elige entre editar imágenes existentes o crear nuevas a partir de texto.
           </p>
           <div className="mt-6">
             <button 
@@ -540,6 +772,15 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Selector de pestañas */}
+        <TabSwitcher 
+          tabs={tabs} 
+          activeTab={activeTab} 
+          onTabChange={setActiveTab} 
+        />
+
+        {activeTab === 'edit' ? (
+          // Contenido existente para edición de imágenes
         <div className="grid gap-8 lg:gap-12 md:grid-cols-2">
           <div className="space-y-8">
             <div className="bg-white/90 backdrop-blur-sm p-6 rounded-2xl shadow-xl border border-indigo-100/50 transform transition-all hover:shadow-indigo-200/40">
@@ -554,12 +795,34 @@ export default function Home() {
               <p className="text-sm text-gray-600 mb-5 ml-14">
                 La <span className="font-bold text-indigo-600">primera imagen</span> es la que será modificada según tus instrucciones. Las demás imágenes servirán como referencia.
               </p>
+                <div className="mb-4 flex justify-between items-center">
+                  <Switch 
+                    label="Mantener máscaras entre generaciones" 
+                    tooltip="Activa esta opción para conservar las máscaras que has dibujado en las futuras generaciones de imágenes"
+                    initialValue={keepMasks}
+                    onChange={handleKeepMasksToggle}
+                  />
+                  
+                  <SeedControl 
+                    className="ml-auto" 
+                    onLockChange={(locked) => {
+                      // Notificar al usuario sobre el estado del bloqueo
+                      if (locked) {
+                        toast.success('Semilla bloqueada. Se mantendrá constante entre generaciones.');
+                      } else {
+                        toast.success('Semilla desbloqueada. Cambiará automáticamente en cada generación.');
+                      }
+                    }}
+                  />
+                </div>
               <ImageUploader 
                 onImagesUpload={handleImagesUpload} 
-                uploadedImages={uploadedImages}
+                  uploadedImages={images}
+                  previousMasks={previousMasks}
+                  keepMasks={keepMasks}
               />
               
-              {Object.keys(imageMasks).length > 0 && (
+                {masks && Object.keys(masks).length > 0 && (
                 <div className="mt-4 p-3 rounded-lg bg-green-50 border border-green-200">
                   <div className="flex items-center text-green-700">
                     <svg 
@@ -573,18 +836,17 @@ export default function Home() {
                         strokeLinecap="round" 
                         strokeLinejoin="round" 
                         strokeWidth={2} 
-                        d="M5 13l4 4L19 7"
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" 
                       />
                     </svg>
                     <span className="text-sm font-medium">
-                      Máscaras de selección aplicadas: {Object.keys(imageMasks).length}
+                        Máscaras de selección aplicadas: {Object.keys(masks).length}
                     </span>
-                  </div>
-                  <p className="text-xs text-green-600 mt-1 ml-7">
-                    Las áreas seleccionadas en rojo serán las únicas modificadas o tomadas como referencia.
-                  </p>
+                    </div>
                 </div>
               )}
+                
+                <MaskInfo masks={masks} className="mt-4" />
             </div>
 
             <div className="bg-white/90 backdrop-blur-sm p-6 rounded-2xl shadow-xl border border-indigo-100/50 transform transition-all hover:shadow-indigo-200/40">
@@ -629,12 +891,12 @@ export default function Home() {
                     <div className="absolute top-0 left-0 w-full h-full rounded-full border-4 border-indigo-200 opacity-25"></div>
                     <div className="absolute top-0 left-0 w-full h-full rounded-full border-t-4 border-l-4 border-indigo-600 animate-spin"></div>
                   </div>
-                  <p className="mt-6 text-indigo-700 font-medium">Creando tu imagen mágica...</p>
+                    <p className="mt-6 text-indigo-700 font-medium">Creando tus variaciones mágicas...</p>
+                  </div>
                 </div>
-              </div>
-            ) : generatedImage ? (
+              ) : generatedImageVariants && generatedImageVariants.length > 0 ? (
               <GeneratedImage 
-                imageUrl={generatedImage} 
+                  imageVariants={generatedImageVariants}
                 onEditImage={handleEditGeneratedImage}
                 onRegenerateImage={handleRegenerateImage}
               />
@@ -655,7 +917,7 @@ export default function Home() {
                   />
                 </svg>
                 <p className="text-indigo-600 font-medium text-lg">
-                  Tu imagen transformada aparecerá aquí
+                    Tus variaciones aparecerán aquí
                 </p>
                 <p className="text-gray-500 text-sm mt-2">
                   Sube una imagen y describe cómo quieres transformarla
@@ -664,6 +926,10 @@ export default function Home() {
             )}
           </div>
         </div>
+        ) : (
+          // Contenido nuevo para generación de imágenes desde texto
+          <TextToImageGenerator />
+        )}
 
         {/* Footer */}
         <div className="text-center mt-12">
