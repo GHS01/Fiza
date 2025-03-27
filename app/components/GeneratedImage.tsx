@@ -1,21 +1,29 @@
 'use client';
 import { useState } from 'react';
 
+export type GeneratedImageVariant = {
+  imageUrl: string;
+  variationLabel?: string;
+};
+
 type GeneratedImageProps = {
-  imageUrl: string | null;
-  onEditImage?: () => void;
+  imageVariants: GeneratedImageVariant[];
+  onEditImage?: (index: number) => void;
   onRegenerateImage?: () => void;
 };
 
-export default function GeneratedImage({ imageUrl, onEditImage, onRegenerateImage }: GeneratedImageProps) {
+export default function GeneratedImage({ imageVariants, onEditImage, onRegenerateImage }: GeneratedImageProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
-  if (!imageUrl) return null;
+  if (!imageVariants || imageVariants.length === 0) return null;
 
-  const handleDownload = () => {
+  const handleDownload = (index: number = activeImageIndex) => {
     try {
+      const imageUrl = imageVariants[index].imageUrl;
+      
       // Crear un objeto de URL directamente
-      const blobUrl = fetch(imageUrl)
+      fetch(imageUrl)
         .then(res => res.blob())
         .then(blob => {
           // Crear una URL para el blob
@@ -24,7 +32,9 @@ export default function GeneratedImage({ imageUrl, onEditImage, onRegenerateImag
           // Crear un enlace temporal
           const link = document.createElement('a');
           link.href = url;
-          link.download = `imagen-generada-${new Date().getTime()}.jpg`;
+          
+          const variationLabel = imageVariants[index].variationLabel || '';
+          link.download = `imagen-generada-${variationLabel}-${new Date().getTime()}.jpg`;
           
           // Añadir al DOM, hacer clic y limpiar de manera segura
           document.body.appendChild(link);
@@ -46,21 +56,25 @@ export default function GeneratedImage({ imageUrl, onEditImage, onRegenerateImag
         .catch(err => {
           console.error('Error al descargar la imagen:', err);
           // Método de respaldo si falla el fetch
-          fallbackDownload();
+          fallbackDownload(index);
         });
     } catch (error) {
       console.warn('Error en el método principal de descarga:', error);
       // Si falla el método principal, usar método de respaldo
-      fallbackDownload();
+      fallbackDownload(index);
     }
   };
   
   // Método de respaldo para descargar usando el método anterior
-  const fallbackDownload = () => {
+  const fallbackDownload = (index: number = activeImageIndex) => {
     try {
+      const imageUrl = imageVariants[index].imageUrl;
       const link = document.createElement('a');
       link.href = imageUrl;
-      link.download = `imagen-generada-${new Date().getTime()}.jpg`;
+      
+      const variationLabel = imageVariants[index].variationLabel || '';
+      link.download = `imagen-generada-${variationLabel}-${new Date().getTime()}.jpg`;
+      
       // Usar la API moderna para descargar
       link.dispatchEvent(new MouseEvent('click', {
         bubbles: true,
@@ -82,13 +96,26 @@ export default function GeneratedImage({ imageUrl, onEditImage, onRegenerateImag
     }
   };
 
+  const handleDownloadAll = () => {
+    // Descargar todas las imágenes una tras otra
+    imageVariants.forEach((_, index) => {
+      // Uso de setTimeout para secuenciar las descargas
+      setTimeout(() => {
+        handleDownload(index);
+      }, index * 700); // Retraso de 700ms entre descargas
+    });
+    
+    // Notificar al usuario usando alert sin condición
+    alert(`Se descargarán ${imageVariants.length} imágenes.`);
+  };
+
   return (
     <div className="w-full space-y-4">
       <div className="border rounded-xl overflow-hidden bg-gradient-to-br from-gray-50 to-indigo-50/30 relative group shadow-lg hover:shadow-indigo-200/40 transition-all duration-300">
         <div className="aspect-w-16">
           <img
-            src={imageUrl}
-            alt="Imagen generada"
+            src={imageVariants[activeImageIndex].imageUrl}
+            alt={`Imagen generada - Variante ${activeImageIndex + 1}`}
             className="w-full object-contain max-h-[500px] cursor-pointer"
             onClick={toggleFullscreen}
           />
@@ -113,12 +140,50 @@ export default function GeneratedImage({ imageUrl, onEditImage, onRegenerateImag
             />
           </svg>
         </button>
+
+        {/* Indicador de variante activa */}
+        {imageVariants.length > 1 && (
+          <div className="absolute top-2 left-2 bg-black/50 text-white py-1 px-3 rounded-full text-xs font-medium backdrop-blur-sm">
+            Variante {activeImageIndex + 1} de {imageVariants.length}
+          </div>
+        )}
       </div>
+
+      {/* Miniaturas para cambiar entre variantes */}
+      {imageVariants.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+          {imageVariants.map((variant, index) => (
+            <button 
+              key={index} 
+              onClick={() => setActiveImageIndex(index)}
+              className={`relative flex-shrink-0 h-20 w-20 rounded-lg overflow-hidden border-2 transition-all duration-200 ${
+                activeImageIndex === index 
+                  ? 'border-indigo-600 shadow-md shadow-indigo-500/30 ring-2 ring-offset-2 ring-indigo-500/30' 
+                  : 'border-gray-200 hover:border-indigo-300'
+              }`}
+              title={variant.variationLabel || `Variante ${index + 1}`}
+            >
+              <img 
+                src={variant.imageUrl} 
+                alt={`Miniatura variante ${index + 1}`} 
+                className="h-full w-full object-cover"
+              />
+              <div className={`absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] ${
+                activeImageIndex === index ? 'opacity-0' : 'opacity-70'
+              }`}>
+                <span className="text-white text-xs font-bold">{index + 1}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Botones de acción */}
       <div className="flex flex-wrap gap-3">
         <div className="flex flex-wrap gap-3 mb-2 w-full sm:w-auto sm:mb-0">
           {onEditImage && (
             <button
-              onClick={onEditImage}
+              onClick={() => onEditImage(activeImageIndex)}
               className="flex-1 sm:flex-none inline-flex items-center justify-center px-5 py-2.5 border border-transparent text-sm font-medium rounded-full shadow-lg text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transform transition-transform hover:scale-105"
             >
               <svg
@@ -186,7 +251,7 @@ export default function GeneratedImage({ imageUrl, onEditImage, onRegenerateImag
           </button>
           
           <button
-            onClick={handleDownload}
+            onClick={() => handleDownload(activeImageIndex)}
             className="flex-1 inline-flex items-center justify-center px-5 py-2.5 border border-transparent text-sm font-medium rounded-full shadow-lg text-white bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transform transition-transform hover:scale-105"
           >
             <svg
@@ -207,6 +272,30 @@ export default function GeneratedImage({ imageUrl, onEditImage, onRegenerateImag
           </button>
         </div>
       </div>
+
+      {/* Botón para descargar todas las variantes */}
+      {imageVariants.length > 1 && (
+        <button
+          onClick={handleDownloadAll}
+          className="w-full flex items-center justify-center px-5 py-2.5 border border-indigo-600 text-sm font-medium rounded-full text-indigo-700 bg-indigo-50 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200 mt-2"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5 mr-2"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+            />
+          </svg>
+          Descargar todas las variantes
+        </button>
+      )}
 
       {/* Modal de imagen a pantalla completa */}
       {isFullscreen && (
@@ -247,39 +336,85 @@ export default function GeneratedImage({ imageUrl, onEditImage, onRegenerateImag
               {/* Contenedor de la imagen con sombra interior */}
               <div className="relative rounded-xl overflow-hidden shadow-inner bg-black/30">
                 <img
-                  src={imageUrl}
-                  alt="Imagen generada ampliada"
-                  className="max-h-[85vh] w-full object-contain rounded-lg"
+                  src={imageVariants[activeImageIndex].imageUrl}
+                  alt={`Imagen generada a pantalla completa - Variante ${activeImageIndex + 1}`}
+                  className="w-full h-full object-contain"
                   onClick={(e) => e.stopPropagation()}
                 />
-
-                {/* Botón de descargar integrado en el marco */}
-                <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2">
-                  <button
+              </div>
+              
+              {/* Controles de navegación en pantalla completa si hay múltiples variantes */}
+              {imageVariants.length > 1 && (
+                <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex space-x-2 bg-black/40 backdrop-blur-sm p-1.5 rounded-full">
+                  {imageVariants.map((_, index) => (
+                    <button
+                      key={index}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveImageIndex(index);
+                      }}
+                      className={`h-3 w-3 rounded-full transition-all ${
+                        activeImageIndex === index
+                          ? 'bg-white scale-110'
+                          : 'bg-white/40 hover:bg-white/70'
+                      }`}
+                      aria-label={`Ver variante ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+              
+              {/* Botones de navegación laterales para pantalla completa */}
+              {imageVariants.length > 1 && (
+                <>
+                  <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleDownload();
+                      setActiveImageIndex(prev => (prev > 0 ? prev - 1 : imageVariants.length - 1));
                     }}
-                    className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-white/90 hover:text-white bg-black/40 hover:bg-indigo-500/80 rounded-full transition-all duration-300 shadow-sm backdrop-blur-sm border border-white/10 hover:border-white/20"
+                    className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/30 hover:bg-black/60 text-white/80 hover:text-white p-2 rounded-full transition-all duration-300 shadow-sm border border-white/10 backdrop-blur-sm"
+                    aria-label="Imagen anterior"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-3.5 w-3.5 mr-1"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
+                    <svg 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      strokeWidth={2} 
+                      stroke="currentColor" 
+                      className="w-6 h-6"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        d="M15.75 19.5L8.25 12l7.5-7.5" 
                       />
                     </svg>
-                    Descargar
                   </button>
-                </div>
-              </div>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveImageIndex(prev => (prev < imageVariants.length - 1 ? prev + 1 : 0));
+                    }}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/30 hover:bg-black/60 text-white/80 hover:text-white p-2 rounded-full transition-all duration-300 shadow-sm border border-white/10 backdrop-blur-sm"
+                    aria-label="Imagen siguiente"
+                  >
+                    <svg 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      strokeWidth={2} 
+                      stroke="currentColor" 
+                      className="w-6 h-6"
+                    >
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        d="M8.25 4.5l7.5 7.5-7.5 7.5" 
+                      />
+                    </svg>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

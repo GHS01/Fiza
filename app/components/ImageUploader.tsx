@@ -15,9 +15,16 @@ type ImageData = {
 type ImageUploaderProps = {
   onImagesUpload: (images: string[], masks?: Record<number, string>) => void;
   uploadedImages?: string[] | null;
+  previousMasks?: Record<number, string>;
+  keepMasks?: boolean;
 };
 
-export default React.memo(function ImageUploader({ onImagesUpload, uploadedImages }: ImageUploaderProps) {
+export default React.memo(function ImageUploader({ 
+  onImagesUpload, 
+  uploadedImages,
+  previousMasks,
+  keepMasks = false
+}: ImageUploaderProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [images, setImages] = useState<ImageData[]>([]);
   const [masks, setMasks] = useState<Record<number, string>>({});
@@ -43,17 +50,45 @@ export default React.memo(function ImageUploader({ onImagesUpload, uploadedImage
       });
       
       setImages(newImages);
-      // Limpiar máscaras al recibir nuevas imágenes
-      setMasks({});
+      
+      // Si keepMasks está activado y hay máscaras previas disponibles, usarlas
+      if (keepMasks && previousMasks && Object.keys(previousMasks).length > 0) {
+        setMasks(previousMasks);
+      } else if (!keepMasks) {
+        // Solo limpiar máscaras si keepMasks está desactivado
+        setMasks({});
+      }
     } else if (uploadedImages === null) {
       // Si uploadedImages es null (explícitamente), limpiar las imágenes existentes
       setImages([]);
-      setMasks({});
+      
+      // Solo limpiar máscaras si keepMasks está desactivado
+      if (!keepMasks) {
+        setMasks({});
+      }
+      
       // Limpiar cualquier estado interno que pudiera mantener referencias a imágenes
       isUpdatingRef.current = false;
       lastUpdateTimeRef.current = 0;
     }
-  }, [uploadedImages]);
+  }, [uploadedImages, keepMasks, previousMasks]); // Eliminamos onImagesUpload de las dependencias
+  
+  // Efecto para sincronizar máscaras cuando cambian o cuando se activa keepMasks
+  useEffect(() => {
+    // Solo ejecutamos si hay imágenes para evitar notificaciones innecesarias
+    if (images.length > 0) {
+      // Usamos debounce con setTimeout para evitar actualizaciones excesivas
+      const timeoutId = setTimeout(() => {
+        if (!isUpdatingRef.current) {
+          const imageBases = images.map(img => img.base64);
+          // Siempre notificamos las máscaras actuales, sean vacías o no
+          onImagesUpload(imageBases, Object.keys(masks).length > 0 ? masks : undefined);
+        }
+      }, 300);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [masks, images, onImagesUpload]);
 
   // Función para notificar cambios al padre, optimizada para evitar múltiples llamadas
   const notifyChanges = useCallback((newImages: ImageData[], newMasks: Record<number, string>) => {
